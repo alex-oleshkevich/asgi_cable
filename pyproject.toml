@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "wire"
+name = "asgi_cable"
 version = "0.1.0"
-description = "SSE and WebSocket framework for ASGI."
+description = "A framework for the real-time ASGI apps."
 authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
 license = "MIT"
 

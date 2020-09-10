@@ -1,11 +1,11 @@
-# Wire - WebSocket framework for ASGI apps.
+# A framework for the real-time ASGI apps.
 
 ## Installation
 
 ```bash
-pip install wire
+pip install asgi_cable
 # or
-poetry add wire
+poetry add asgi_cable
 ```
 
 ## Usage
@@ -16,8 +16,8 @@ TBD
 
 ```python
 # urls.py
-from wire.contrib.django import websocket
-from wire import WebSocket
+from asgi_cable.contrib.django import websocket
+from asgi_cable import WebSocket
 
 async def ws_handler(request: WebSocket):
     await request.accept()
