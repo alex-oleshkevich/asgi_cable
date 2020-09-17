@@ -145,6 +145,7 @@ class Socket:
             assert data['topic'], 'Every event must define "topic" key.'
             assert data['name'], 'Every event must define "name" key.'
             event = Event(
+                topic=data['topic'],
                 name=data['name'],
                 time=datetime.datetime.fromisoformat(data['time']),
                 ref=data['ref'],
