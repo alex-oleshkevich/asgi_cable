@@ -101,9 +101,9 @@ class Channel {
         this.socket = socket;
         this.listeners = {};
         this.timeout = timeout;
-        this.socket.onOpen(() => {
-            this.join();
-        });
+        // this.socket.onOpen(() => {
+        //     this.join();
+        // });
 
         // common event listeners
         this.on(CHANNEL_EVENTS.reply, (payload, ref) => {

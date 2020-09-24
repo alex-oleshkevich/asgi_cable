@@ -89,6 +89,12 @@ class Channel:
     async def dispatch(self, event: Event):
         if event.name == ServiceEvents.JOIN:
             await self.join()
+            await self.websocket.send_json({
+                'topic': event.topic,
+                'event': f'channel_reply_{event.ref}',
+                'data': {},
+                'ref': event.ref,
+            })
         elif event.name == ServiceEvents.LEAVE:
             await self.leave()
         elif event.name == ServiceEvents.HEARTBEAT:
@@ -157,15 +163,3 @@ class Socket:
                         event.topic, websocket, self._backend,
                     )
                     await channel.dispatch(event)
-
-
-class ChatRoom(Channel):
-    async def received(self, event: Event):
-        if event.name == 'message':
-            await event.reply('Accepted')
-
-
-class RoomSocket(Socket):
-    channels = {
-        'room:*': ChatRoom,
-    }

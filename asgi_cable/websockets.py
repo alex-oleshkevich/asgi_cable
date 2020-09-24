@@ -207,7 +207,4 @@ class WebSocket:
         await self.send({"type": SendEvent.SEND, "bytes": text})
 
     def _test_if_can_receive(self, message: t.Mapping):
-        assert message["type"] == ReceiveEvent.RECEIVE, (
-            'Invalid message type "%s". Was connection accepted?' % message["type"]
-        )
         return True

@@ -6,4 +6,5 @@ from . import views
 urlpatterns = [
     path('', views.IndexView.as_view()),
     websocket('ws/', views.ws_handler),
+    websocket('channels/', views.RoomSocket()),
 ]
