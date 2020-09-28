@@ -20,7 +20,6 @@ class ServiceEvents:
 class Event:
     topic: str
     name: str
-    time: datetime.datetime
     ref: int
     websocket: WebSocket = None
 
@@ -36,7 +35,6 @@ class Event:
         return dict(
             topic=self.topic,
             name=self.name,
-            time=datetime.datetime.now(),
             ref=self.ref,
         )
 
@@ -97,8 +95,6 @@ class Channel:
             })
         elif event.name == ServiceEvents.LEAVE:
             await self.leave()
-        elif event.name == ServiceEvents.HEARTBEAT:
-            await self.heartbeat(event)
         else:
             await self.received(event)
 
@@ -130,13 +126,6 @@ class Channel:
     async def received(self, event: Event):
         pass
 
-    async def heartbeat(self, event: Event):
-        await self.websocket.send_json({
-            'event': ServiceEvents.HEARTBEAT,
-            'ref': event.ref,
-            'data': {},
-        })
-
 
 class Socket:
     channels: t.Dict[str, t.Type[Channel]] = None
@@ -149,11 +138,10 @@ class Socket:
         while True:
             data = await websocket.receive_json()
             assert data['topic'], 'Every event must define "topic" key.'
-            assert data['name'], 'Every event must define "name" key.'
+            assert data['event'], 'Every event must define "name" key.'
             event = Event(
                 topic=data['topic'],
-                name=data['name'],
-                time=datetime.datetime.fromisoformat(data['time']),
+                name=data['event'],
                 ref=data['ref'],
                 websocket=websocket,
             )

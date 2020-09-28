@@ -11,7 +11,7 @@ function makeReplyEventName(ref) {
     return `channel_reply_${ref}`;
 }
 
-class Push {
+class Push2 {
     /**
      *
      * @param {Channel} channel
@@ -88,7 +88,7 @@ class Push {
 }
 
 
-class Channel {
+class Channel2 {
 
     /**
      *
@@ -101,9 +101,6 @@ class Channel {
         this.socket = socket;
         this.listeners = {};
         this.timeout = timeout;
-        // this.socket.onOpen(() => {
-        //     this.join();
-        // });
 
         // common event listeners
         this.on(CHANNEL_EVENTS.reply, (payload, ref) => {
@@ -149,7 +146,7 @@ class Channel {
 const noop = () => {
 };
 
-class Socket {
+class Socket2 {
     constructor(path, opts) {
         opts = opts || {};
         this.path = path;
@@ -268,7 +265,7 @@ class Socket {
         this.callbacks.message.forEach(fn => fn(data));
 
         let channels = this.channels[data.topic] || [];
-        console.log(e.data)
+        console.log(e.data);
         channels.forEach(channel => {
             channel.trigger(data.event, data.payload, data.ref);
         });
@@ -320,33 +317,9 @@ class Socket {
         this.refCounter++;
         return this.refCounter;
     }
-
-    // onConnMessage(rawMessage) {
-    //     this.decode(rawMessage.data, msg => {
-    //         let { topic, event, payload, ref, join_ref } = msg;
-    //         if (ref && ref === this.pendingHeartbeatRef) {
-    //             this.pendingHeartbeatRef = null;
-    //         }
-    //
-    //         if (this.hasLogger()) this.log('receive', `${payload.status || ''} ${topic} ${event} ${ref && '(' + ref + ')' || ''}`, payload);
-    //
-    //         for (let i = 0; i < this.channels.length; i++) {
-    //             const channel = this.channels[i];
-    //             if (!channel.isMember(topic, event, payload, join_ref)) {
-    //                 continue;
-    //             }
-    //             channel.trigger(event, payload, ref, join_ref);
-    //         }
-    //
-    //         for (let i = 0; i < this.stateChangeCallbacks.message.length; i++) {
-    //             let [, callback] = this.stateChangeCallbacks.message[i];
-    //             callback(msg);
-    //         }
-    //     });
-    // }
 }
 
-class Timer {
+class Timer2 {
     constructor(callback, intervals = null) {
         this._callback = callback;
         this._timer = null;
@@ -369,5 +342,126 @@ class Timer {
 
     nextInterval(retry) {
         return this._intervals[retry - 1] || 10000;
+    }
+}
+
+/** -------------------------------------------------------------------- **/
+
+class Timer {
+    constructor(fn, intervals) {
+        this.fn = fn;
+        this.intervals = intervals;
+        this.retry = 0;
+        this._timer = null;
+    }
+
+    start() {
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => {
+            this.retry += 1;
+            this.fn();
+        }, this.nextInterval());
+    }
+
+    reset() {
+        this.retry = 0;
+        clearTimeout(this._timer);
+    }
+
+    nextInterval() {
+        console.log('interval', this.intervals[this.retry] || 10000);
+        return this.intervals[this.retry] || 10000;
+    }
+}
+
+const defaultOptions = {
+    reconnectIntervals: DEFAULT_INTERVALS,
+};
+
+/**
+ * @property {WebSocket} _socket
+ */
+class Socket {
+    constructor(path, options = defaultOptions) {
+        if (path.charAt(0) === '/') {
+            let protocol = location.protocol === 'https' ? 'wss' : 'ws';
+            let host = location.host;
+            path = `${protocol}://${host}${path}`;
+        }
+        this.url = path;
+        this._socket = null;
+        this._subscribers = {
+            open: [],
+            message: [],
+            error: [],
+            close: [],
+        };
+        this.reconnectTimer = new Timer(() => this.connect(), options.reconnectIntervals);
+        this.on('open', () => {
+            this.reconnectTimer.reset();
+        });
+        this.on('close', event => {
+            this.onErrorClose(event);
+        });
+    }
+
+    connect() {
+        return new Promise((resolve, reject) => {
+            this.closeWasClean = true;
+            this._socket = new WebSocket(this.url);
+            this._socket.onopen = event => {
+                this.dispatch('open', event);
+                resolve(event);
+            };
+            this._socket.onmessage = event => this.dispatch('message', event);
+            this._socket.onerror = event => event => {
+                this.dispatch('error', event);
+                reject(event);
+            };
+            this._socket.onclose = event => this.dispatch('close', event);
+        });
+    }
+
+    disconnect(code, reason) {
+        return this.teardown(code, reason);
+    }
+
+    dispatch(type, event) {
+        this._subscribers[type].forEach(fn => fn(event));
+    }
+
+    on(event, fn) {
+        if (!(event in this._subscribers)) {
+            throw new Error(`Event "${event}" is not available for subscription.`);
+        }
+        this._subscribers[event].push(fn);
+    }
+
+    off(event, fn) {
+        if (!(event in this._subscribers)) {
+            throw new Error(`Event "${event}" is not available for subscription.`);
+        }
+        this._subscribers[event] = this._subscribers[event].filter(cb => cb !== fn);
+    }
+
+    send(data) {
+        return this._socket.send(JSON.stringify(data));
+    }
+
+    teardown(code, reason) {
+        return new Promise((resolve, reject) => {
+            this._socket.close(code, reason);
+            resolve();
+        });
+    }
+
+    /**
+     * @param {CloseEvent} event
+     */
+    onErrorClose(event) {
+        if (event.wasClean) {
+            return;
+        }
+        this.reconnectTimer.start();
     }
 }

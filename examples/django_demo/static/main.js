@@ -1,18 +1,18 @@
+// let echoSocket = new Socket('/ws/');
+// setInterval(() => {
+//     echoSocket.send('Hello');
+// }, 1000);
+// echoSocket.connect();
+
 let socket = new Socket('/channels/');
-socket.onOpen(() => console.log('socket connection open'));
-socket.onMessage(() => console.log('socket received message'));
-socket.onError(() => console.log('socket got an error'));
-socket.onClose(() => console.log('socket connection closed'));
+socket.on('open', () => console.log('socket connection open'));
+socket.on('message', () => console.log('socket received message'));
+socket.on('error', () => console.log('socket got an error'));
+socket.on('close', () => console.log('socket connection closed'));
 
-async function main() {
-    await socket.connect();
-    let channel = socket.channel('room:lobby');
-    try {
-        let result = await channel.join();
-        console.log(result);
-    } catch (e) {
-        console.log('Did not join the channel.', e);
-    }
-}
-
-main();
+socket.connect().then(() => {
+    // let channel = socket.channel('room:lobby');
+    // channel.join().then(() => {
+    //     console.log('Channel joined.');
+    // }).catch(e => console.error);
+});
