@@ -1,10 +1,10 @@
 const DEFAULT_INTERVALS = [10, 50, 100, 150, 200, 250, 500, 1000, 2000, 5000, 10000];
 const DEFAULT_TIMEOUT = 10000;
 const SERVICE_CHANNEL = '__service__';
-const CHANNEL_EVENTS = {
-    join: '__join__',
-    reply: '__reply__',
-    heartbeat: '__heartbeat__',
+const ChannelEvents = {
+    JOIN: '__join__',
+    Leave: '__leave__',
+    Reply: '__reply__',
 };
 
 function makeReplyEventName(ref) {
@@ -103,18 +103,18 @@ class Channel2 {
         this.timeout = timeout;
 
         // common event listeners
-        this.on(CHANNEL_EVENTS.reply, (payload, ref) => {
+        this.on(ChannelEvents.reply, (payload, ref) => {
             let replyEventName = makeReplyEventName(ref);
             this.trigger(replyEventName, payload, ref);
         });
     }
 
     join() {
-        return this.send(CHANNEL_EVENTS.join);
+        return this.send(ChannelEvents.join);
     }
 
     leave() {
-        return this.send(CHANNEL_EVENTS.leave);
+        return this.send(ChannelEvents.leave);
     }
 
     send(event, payload) {
@@ -220,7 +220,7 @@ class Socket2 {
     heartbeat() {
         this.send({
             topic: SERVICE_CHANNEL,
-            event: CHANNEL_EVENTS.heartbeat,
+            event: ChannelEvents.heartbeat,
             payload: {},
             ref: this.nextRef(),
         });
@@ -374,6 +374,83 @@ class Timer {
     }
 }
 
+class Push {
+    constructor(socket, channel, event, data, timeout) {
+        this.socket = socket;
+        this.channel = channel;
+        this.timeout = timeout;
+        this.event = event;
+        this.data = data;
+        this.ref = socket.nextRef();
+        this.subscribers = { success: [], error: [] };
+    }
+
+    send() {
+        return new Promise((resolve, reject) => {
+            let timer = setTimeout(() => {
+                this.dispatch('timeout');
+            }, this.timeout);
+            this.on('ok', data => resolve(data.message || null));
+            this.on('error', data => reject(data.message || null));
+            this.on('timeout', () => reject(`Push ref=${this.ref} timed out.`));
+
+            this.socket.send({
+                topic: this.channel.topic,
+                event: this.event,
+                data: this.data,
+                ref: this.ref,
+            });
+        });
+    }
+
+    on(status, fn) {
+        this.subscribers[status].push(fn);
+        return this;
+    }
+
+    dispatch(status, data) {
+        this.subscribers[status].forEach(cb => cb(data));
+    }
+}
+
+
+class Channel {
+    constructor(socket, topic) {
+        this.socket = socket;
+        this.topic = topic;
+        this._subscribers = {};
+    }
+
+    join(timeout = 30000) {
+        return new Promise((resolve, reject) => {
+            this
+                .createPush(ChannelEvents.JOIN, null, timeout)
+                .on('success', e => resolve(e))
+                .on('error', e => reject(e))
+                .send();
+        });
+    }
+
+    createPush(event, data, timeout = 30000) {
+        return new Push(this.socket, this, event, data, timeout);
+    }
+
+    on(event, fn) {
+        if (!this._subscribers[event]) {
+            this._subscribers[event] = [];
+        }
+        this._subscribers[event].push(fn);
+    }
+
+    off(event, fn) {
+        this._subscribers[event] = this._subscribers[event].filter(cb => cb !== fn);
+    }
+
+    dispatch(data) {
+        console.log('DISPATCH', data);
+    }
+}
+
 const defaultOptions = {
     reconnectIntervals: DEFAULT_INTERVALS,
 };
@@ -397,11 +474,20 @@ class Socket {
             close: [],
         };
         this.reconnectTimer = new Timer(() => this.connect(), options.reconnectIntervals);
+        this.refCounter = 1;
+        this.channels = {};
         this.on('open', () => {
             this.reconnectTimer.reset();
         });
         this.on('close', event => {
-            this.onErrorClose(event);
+            if (event.wasClean) {
+                this.reconnectTimer.reset();
+            } else {
+                this.reconnectTimer.start();
+            }
+        });
+        this.on('message', data => {
+            this._dispatchChannelMessage(data);
         });
     }
 
@@ -413,8 +499,10 @@ class Socket {
                 this.dispatch('open', event);
                 resolve(event);
             };
-            this._socket.onmessage = event => this.dispatch('message', event);
-            this._socket.onerror = event => event => {
+            this._socket.onmessage = event => {
+                this.dispatch('message', JSON.parse(event.data));
+            };
+            this._socket.onerror = event => {
                 this.dispatch('error', event);
                 reject(event);
             };
@@ -426,8 +514,8 @@ class Socket {
         return this.teardown(code, reason);
     }
 
-    dispatch(type, event) {
-        this._subscribers[type].forEach(fn => fn(event));
+    dispatch(type, ...args) {
+        this._subscribers[type].forEach(fn => fn(...args));
     }
 
     on(event, fn) {
@@ -455,13 +543,25 @@ class Socket {
         });
     }
 
-    /**
-     * @param {CloseEvent} event
-     */
-    onErrorClose(event) {
-        if (event.wasClean) {
+    nextRef() {
+        this.refCounter += 1;
+        return this.refCounter;
+    }
+
+    channel(topic) {
+        if (!(topic in this.channels)) {
+            this.channels[topic] = [];
+        }
+        let channel = new Channel(this, topic);
+        this.channels[topic].push(channel);
+        return channel;
+    }
+
+    _dispatchChannelMessage(data) {
+        if (!data.topic) {
             return;
         }
-        this.reconnectTimer.start();
+        let channels = this.channels[data.topic] || [];
+        channels.forEach(ch => ch.dispatch(data));
     }
 }
