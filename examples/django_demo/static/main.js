@@ -15,5 +15,13 @@ socket.connect().then(() => {
     let channel = socket.channel('room:lobby');
     channel.join().then(() => {
         console.log('Channel joined.');
-    }).catch(e => console.error);
+    }).catch(e => console.error('Did not join channel', e));
+
+    let textarea = document.getElementById('message');
+    let submit = document.getElementById('send');
+    submit.addEventListener('click', () => {
+        channel.send('message', {
+            'body': textarea.value,
+        })
+    });
 });

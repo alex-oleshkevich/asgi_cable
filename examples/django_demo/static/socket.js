@@ -382,17 +382,36 @@ class Push {
         this.event = event;
         this.data = data;
         this.ref = socket.nextRef();
-        this.subscribers = { success: [], error: [] };
+        this.subscribers = { ok: [], error: [], timeout: [] };
     }
 
     send() {
         return new Promise((resolve, reject) => {
+            const replyEventName = makeReplyEventName(this.ref);
+            this.channel.on(replyEventName, ({ data: eventData }) => {
+                let { status, data } = eventData;
+                this.dispatch(status, data);
+            });
             let timer = setTimeout(() => {
                 this.dispatch('timeout');
             }, this.timeout);
-            this.on('ok', data => resolve(data.message || null));
-            this.on('error', data => reject(data.message || null));
-            this.on('timeout', () => reject(`Push ref=${this.ref} timed out.`));
+
+            this.on('ok', data => {
+                clearTimeout(timer);
+                this.channel.off(replyEventName);
+                resolve(data);
+            });
+
+            this.on('error', data => {
+                clearTimeout(timer);
+                this.channel.off(replyEventName);
+                reject(data);
+            });
+
+            this.on('timeout', () => {
+                this.channel.off(replyEventName);
+                reject(`Push ref=${this.ref} timed out.`);
+            });
 
             this.socket.send({
                 topic: this.channel.topic,
@@ -422,13 +441,11 @@ class Channel {
     }
 
     join(timeout = 30000) {
-        return new Promise((resolve, reject) => {
-            this
-                .createPush(ChannelEvents.JOIN, null, timeout)
-                .on('success', e => resolve(e))
-                .on('error', e => reject(e))
-                .send();
-        });
+        return new Push(this.socket, this, ChannelEvents.JOIN, null, timeout).send();
+    }
+
+    send(event, data, timeout = 30000) {
+        return new Push(this.socket, this, event, data, timeout).send();
     }
 
     createPush(event, data, timeout = 30000) {
@@ -442,12 +459,24 @@ class Channel {
         this._subscribers[event].push(fn);
     }
 
-    off(event, fn) {
-        this._subscribers[event] = this._subscribers[event].filter(cb => cb !== fn);
+    off(event, fn = null) {
+        if (fn) {
+            this._subscribers[event] = this._subscribers[event].filter(cb => cb !== fn);
+        } else {
+            delete this._subscribers[event];
+        }
     }
 
-    dispatch(data) {
-        console.log('DISPATCH', data);
+    trigger(event, data, ref) {
+        let subscribers = this._subscribers[event] || [];
+        subscribers.forEach(fn => fn({ event, data, ref }));
+    }
+
+    dispatch({ event, data, ref }) {
+        if (event === ChannelEvents.Reply) {
+            event = makeReplyEventName(ref);
+        }
+        this.trigger(event, data, ref);
     }
 }
 

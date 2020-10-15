@@ -16,6 +16,11 @@ class ServiceEvents:
     REPLY = '__reply__'
 
 
+class ReplyStatus:
+    OK = 'ok'
+    ERROR = 'error'
+
+
 @dataclasses.dataclass
 class Event:
     topic: str
@@ -23,11 +28,14 @@ class Event:
     ref: int
     websocket: WebSocket = None
 
-    async def reply(self, data: t.Any):
+    async def reply(self, data: t.Any = None, success: bool=True):
         await self.websocket.send_json({
             'topic': self.topic,
-            'name': ServiceEvents.REPLY,
-            'data': data,
+            'event': ServiceEvents.REPLY,
+            'data': {
+                'status': ReplyStatus.OK if success else ReplyStatus.ERROR,
+                'data': data,
+            },
             'ref': self.ref,
         })
 
@@ -86,29 +94,23 @@ class Channel:
 
     async def dispatch(self, event: Event):
         if event.name == ServiceEvents.JOIN:
-            await self.join()
-            await self.websocket.send_json({
-                'topic': event.topic,
-                'event': f'channel_reply_{event.ref}',
-                'data': {},
-                'ref': event.ref,
-            })
+            await self.join(event)
         elif event.name == ServiceEvents.LEAVE:
             await self.leave()
         else:
             await self.received(event)
 
-    async def join(self):
+    async def join(self, event: Event):
         try:
             authorized = await self.authorize(self.websocket.scope)
             if not authorized:
                 raise AuthorizationError('Not authorized to join.')
             await self._backend.add(self)
             await self.joined()
-        except AuthorizationError:
-            return False
+        except AuthorizationError as ex:
+            await event.reply(ReplyStatus.ERROR, str(ex))
         else:
-            return True
+            await event.reply(ReplyStatus.OK, 'Successfully joined channel.')
 
     async def joined(self):
         ...

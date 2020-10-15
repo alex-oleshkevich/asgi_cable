@@ -1,3 +1,4 @@
+import typing as t
 from django.views.generic import TemplateView
 
 from asgi_cable import WebSocket
@@ -18,8 +19,10 @@ async def ws_handler(websocket: WebSocket):
 class ChatRoom(Channel):
     async def received(self, event: Event):
         if event.name == 'message':
-            await event.reply('Accepted')
+            await event.reply('Accepted', True)
 
+    # async def authorize(self, scope: t.Dict) -> bool:
+    #     return False
 
 class RoomSocket(Socket):
     channels = {
