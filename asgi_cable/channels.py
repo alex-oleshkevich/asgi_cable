@@ -6,7 +6,7 @@ import datetime
 import re
 import typing as t
 
-from .websockets import WebSocket
+from .websockets import WebSocket, WebSocketDisconnect
 
 
 class ServiceEvents:
@@ -28,7 +28,7 @@ class Event:
     ref: int
     websocket: WebSocket = None
 
-    async def reply(self, data: t.Any = None, success: bool=True):
+    async def reply(self, data: t.Any = None, success: bool = True):
         await self.websocket.send_json({
             'topic': self.topic,
             'event': ServiceEvents.REPLY,
@@ -76,13 +76,16 @@ class InMemoryBackend(Backend):
     async def add(self, channel: Channel):
         self._channels.setdefault(channel.name, [])
         self._channels[channel.name].append(channel)
+        print('Channel registered in the backend.')
 
     async def remove(self, channel: Channel):
         self._channels[channel.name].remove(channel)
+        print('Channel unregistered in the backend.')
 
     async def publish(self, channel: Channel, event: Event):
         await asyncio.gather([
-            self._queue.put(event) for channel in self._channels[channel.name]
+            self._queue.put(event)
+            for channel in self._channels[channel.name]
         ])
 
 
@@ -108,9 +111,9 @@ class Channel:
             await self._backend.add(self)
             await self.joined()
         except AuthorizationError as ex:
-            await event.reply(ReplyStatus.ERROR, str(ex))
+            await event.reply(str(ex), False)
         else:
-            await event.reply(ReplyStatus.OK, 'Successfully joined channel.')
+            await event.reply('Successfully joined channel.', True)
 
     async def joined(self):
         ...
@@ -138,18 +141,25 @@ class Socket:
     async def __call__(self, websocket: WebSocket):
         await websocket.accept()
         while True:
-            data = await websocket.receive_json()
-            assert data['topic'], 'Every event must define "topic" key.'
-            assert data['event'], 'Every event must define "name" key.'
-            event = Event(
-                topic=data['topic'],
-                name=data['event'],
-                ref=data['ref'],
-                websocket=websocket,
-            )
-            for pattern, channel_class in self.channels.items():
-                if re.match(pattern, event.topic):
-                    channel = channel_class(
-                        event.topic, websocket, self._backend,
-                    )
-                    await channel.dispatch(event)
+            try:
+                data = await websocket.receive_json()
+                assert data['topic'], 'Every event must define "topic" key.'
+                assert data['event'], 'Every event must define "name" key.'
+                event = Event(
+                    topic=data['topic'],
+                    name=data['event'],
+                    ref=data['ref'],
+                    websocket=websocket,
+                )
+                for pattern, channel_class in self.channels.items():
+                    if re.match(pattern, event.topic):
+                        channel = channel_class(
+                            event.topic, websocket, self._backend,
+                        )
+                        await channel.dispatch(event)
+            except WebSocketDisconnect:
+                print('Client disconnect')
+                break
+
+    def get_channels(self, pattern: str) -> t.Generator[Channel]:
+        pass

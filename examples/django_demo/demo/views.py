@@ -24,6 +24,7 @@ class ChatRoom(Channel):
     # async def authorize(self, scope: t.Dict) -> bool:
     #     return False
 
+
 class RoomSocket(Socket):
     channels = {
         'room:*': ChatRoom,
